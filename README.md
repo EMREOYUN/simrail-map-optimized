@@ -1,6 +1,6 @@
 # Simrail Map Optimalized (SMO)
 
-## This project hosted at [https://smo.data-unknown.com](https://smo.data-unknown.com/)
+## This project hosted at [https://eo.wtf](https://eo.wtf/)
 
 ## Table of Contents
 
