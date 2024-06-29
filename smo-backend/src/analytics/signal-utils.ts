@@ -11,7 +11,7 @@ const logger = new ModuleLogger("SIGNALS-PROC-WORKER");
  * "L1_1A" matches the pattern.
  * "L23_456B" matches the pattern.
  */
-export const BLOCK_SIGNAL_REGEX = /^\w\d+_\d+[A-Z]*$/;
+export const BLOCK_SIGNAL_REGEX = /^L\d+_\d+[A-Z]*$/;
 
 /**
  * Regular expression to match the reverse block signal pattern.
@@ -20,7 +20,18 @@ export const BLOCK_SIGNAL_REGEX = /^\w\d+_\d+[A-Z]*$/;
  * "L1_1A" matches the pattern.
  * "L23_456B" matches the pattern.
  */
-export const BLOCK_SIGNAL_REVERSE_REGEX = /^\w\d+_\d+[A-Z]$/;
+export const BLOCK_SIGNAL_REVERSE_REGEX = /^L\d+_\d+[A-Z]$/;
+
+/**
+ * Regular expression to match the main signal pattern.
+ * The pattern is one or more word characters followed by an underscore and one or more word characters or digits.
+ * The first word character can be any uppercase or lowercase letter except "L" since it is reserved for block signals.
+ * @example
+ * "ZW_D" matches the pattern.
+ * "ZW_1" matches the pattern.
+ */
+export const MAIN_SIGNAL_REGEX =
+  /[A-KM-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃ][A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃ]+\d*_[A-Za-zżźćńółęąśŻŹĆĄŚĘŁÓŃ0-9]+/;
 
 /**
  * Function to determine the type of signal for a given train.
@@ -33,6 +44,10 @@ export const BLOCK_SIGNAL_REVERSE_REGEX = /^\w\d+_\d+[A-Z]$/;
  */
 export function getSignalType(train: Train) {
   if (train.TrainData.SignalInFrontSpeed === 60 || train.TrainData.SignalInFrontSpeed === 100) {
+    return "main";
+  }
+
+  if (MAIN_SIGNAL_REGEX.test(train.TrainData.SignalInFront.split("@")[0])) {
     return "main";
   }
 
@@ -117,7 +132,7 @@ export function getSignalRole(signal: {
  * If the length of the error message exceeds 500 characters, it is truncated to the first 500 characters.
  * If an error occurs during this process, it logs an error message.
  */
-export function tryLogError(prev: string, next: string, error: string) {
+export function tryLogError(prev: string, next: string, error: string, trainId: string) {
   prisma.signalConnectionErrors
     .findUnique({
       where: { prev_next_error: { prev, next, error } },
@@ -130,6 +145,7 @@ export function tryLogError(prev: string, next: string, error: string) {
             prev,
             next,
             error: error.length > 500 ? error.substring(0, 500) : error,
+            creator: trainId,
           },
         });
       }
