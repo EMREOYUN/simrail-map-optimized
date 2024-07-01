@@ -6,7 +6,6 @@ import { PrismaClient } from "@prisma/client";
 import { Worker } from "worker_threads";
 import { extname } from "path";
 import { statSync } from "fs";
-import { metrics } from "@sentry/node";
 
 const prisma = new PrismaClient();
 const WORKER_TIMEOUT = 5 * 60 * 1000;
@@ -123,11 +122,6 @@ export class Fetcher<T> {
       })
       .then(() => this.logger.debug("Stats written"))
       .catch((e: unknown) => this.logger.error("Error writing stats: " + e));
-
-    metrics.gauge(`${this.module}_REFRESH_TIME`, time, {
-      unit: "millisecond",
-      tags: { count: this.refreshCount },
-    });
   }
 
   public get currentData(): T | null {
@@ -184,11 +178,6 @@ export class PerServerFetcher<T> extends Fetcher<Map<string, T>> {
       })
       .then(() => this.logger.debug("Stats written"))
       .catch((e: unknown) => this.logger.error("Error writing stats: " + e));
-
-    metrics.gauge(`${this.module}_REFRESH_TIME`, time, {
-      unit: "millisecond",
-      tags: { count: this.refreshCount, server_count: this.currentData?.size },
-    });
   }
 
   protected async fetchData() {

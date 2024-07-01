@@ -143,7 +143,7 @@ export async function fetchTime(serverCode: string): Promise<number> {
   const start = Date.now();
   return fetch(TIME_URL_PREFIX + serverCode)
     .then((res) => {
-      logger.debug(`Fetched time in ${Date.now() - start}ms for ${serverCode}`, {
+      logger.debug(`Fetched time in ${Date.now() - start}ms for ${serverCode} which is ` + res.text(), {
         module: "FETCH-TIME",
       });
       return res;

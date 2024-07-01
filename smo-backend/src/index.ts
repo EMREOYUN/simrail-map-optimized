@@ -2,10 +2,7 @@ if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 
-import "./instrument";
-
-import * as Sentry from "@sentry/node";
-import * as http from "http";
+import * as http from "http"
 import * as https from "https";
 import { readFileSync } from "fs";
 import { Server as SocketIOServer } from "socket.io";
@@ -477,8 +474,6 @@ if (process.env.ADMIN_PASSWORD) {
     }
   });
 }
-
-Sentry.setupExpressErrorHandler(app);
 
 const PORT = process.env.PORT || 3000;
 

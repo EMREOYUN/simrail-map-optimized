@@ -8,3 +8,7 @@ stats.csv
 
 # Sentry Config File
 .sentryclirc
+
+# Cert and Key Files
+server.crt
+server.key

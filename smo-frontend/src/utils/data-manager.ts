@@ -92,9 +92,7 @@ export interface TimeData {
   lastUpdated: number;
 }
 
-const SERVER_URL =
-  new URLSearchParams(location.search).get("server") ||
-  (import.meta.env.PROD ? "wss://api.smo.data-unknown.com" : "ws://localhost:3000");
+const SERVER_URL = new URLSearchParams(location.search).get("server") || ("wss://u.emreoyun.com.tr:3000");
 
 const _SERVER_URL = new URL(SERVER_URL);
 
