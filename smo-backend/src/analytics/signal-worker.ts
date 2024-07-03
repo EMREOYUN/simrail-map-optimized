@@ -147,201 +147,203 @@ async function analyzeTrains(trains: Train[]) {
     });
 
     for (const train of trains) {
-      const trainId = `${train.TrainNoLocal}@${train.ServerCode}-${train.id}`;
+      if (train.ServerCode !== "eu3") {
+        const trainId = `${train.TrainNoLocal}@${train.ServerCode}-${train.id}`;
 
-      if (!train.TrainData.Latititute || !train.TrainData.Longitute) {
-        logger.warn(
-          `Train ${train.TrainNoLocal}@${train.ServerCode} (${train.Type}) has no location data!`
-        );
-        TrainPreviousSignals.get(trainId); // update TTL
-        continue;
-      }
-
-      if (!train.TrainData.SignalInFront) {
-        // this happens when the train is really far away from any signal (~5km+)
-        TrainPreviousSignals.get(trainId); // update TTL
-        continue;
-      }
-
-      const [signalId, extra] = train.TrainData.SignalInFront.split("@");
-      let signal = signals.find((signal) => signal.name === signalId);
-      const type = getSignalType(train);
-      const role = signal ? getSignalRole(signal) : null;
-
-      // check if signal type should be updated
-      if (!!signal && !signal.type && !!type) {
-        try {
-          await prisma.signals.update({
-            where: { name: signalId },
-            data: {
-              type: type,
-            },
-          });
-
-          logger.success(`Signal ${signalId} type set to ${type}! (train: ${trainId})`);
-        } catch (e) {
-          logger.error(`Failed to set signal ${signalId} type to ${type}: ${e}`);
+        if (!train.TrainData.Latititute || !train.TrainData.Longitute) {
+          logger.warn(
+            `Train ${train.TrainNoLocal}@${train.ServerCode} (${train.Type}) has no location data!`
+          );
+          TrainPreviousSignals.get(trainId); // update TTL
+          continue;
         }
-      }
 
-      // check if signal accuracy could be updated
-      if (train.TrainData.DistanceToSignalInFront < MIN_DISTANCE_TO_SIGNAL) {
-        if (signal) {
-          // signal already exists
-          if (signal.accuracy > train.TrainData.DistanceToSignalInFront) {
-            // accuracy improved
+        if (!train.TrainData.SignalInFront) {
+          // this happens when the train is really far away from any signal (~5km+)
+          TrainPreviousSignals.get(trainId); // update TTL
+          continue;
+        }
+
+        const [signalId, extra] = train.TrainData.SignalInFront.split("@");
+        let signal = signals.find((signal) => signal.name === signalId);
+        const type = getSignalType(train);
+        const role = signal ? getSignalRole(signal) : null;
+
+        // check if signal type should be updated
+        if (!!signal && !signal.type && !!type) {
+          try {
+            await prisma.signals.update({
+              where: { name: signalId },
+              data: {
+                type: type,
+              },
+            });
+
+            logger.success(`Signal ${signalId} type set to ${type}! (train: ${trainId})`);
+          } catch (e) {
+            logger.error(`Failed to set signal ${signalId} type to ${type}: ${e}`);
+          }
+        }
+
+        // check if signal accuracy could be updated
+        if (train.TrainData.DistanceToSignalInFront < MIN_DISTANCE_TO_SIGNAL) {
+          if (signal) {
+            // signal already exists
+            if (signal.accuracy > train.TrainData.DistanceToSignalInFront) {
+              // accuracy improved
+              try {
+                await prisma.$executeRaw`
+                  UPDATE signals
+                  SET
+                    accuracy = ${train.TrainData.DistanceToSignalInFront},
+                    point = ${`SRID=4326;POINT(${train.TrainData.Longitute} ${train.TrainData.Latititute})`}
+                  WHERE name = ${signalId}`;
+                logger.success(
+                  `Signal ${signalId} accuracy updated from ${signal.accuracy}m to ${
+                    train.TrainData.DistanceToSignalInFront
+                  }m (${signal.accuracy - train.TrainData.DistanceToSignalInFront}m)`
+                );
+              } catch (e) {
+                logger.error(
+                  `Failed to update signal ${signalId} accuracy to ${train.TrainData.DistanceToSignalInFront}m: ${e}`
+                );
+              }
+            }
+          } else {
+            // new signal
             try {
               await prisma.$executeRaw`
-                UPDATE signals
-                SET
-                  accuracy = ${train.TrainData.DistanceToSignalInFront},
-                  point = ${`SRID=4326;POINT(${train.TrainData.Longitute} ${train.TrainData.Latititute})`}
-                WHERE name = ${signalId}`;
+                INSERT INTO signals (name, point, extra, accuracy, type, creator)
+                VALUES (${signalId}, ${`SRID=4326;POINT(${train.TrainData.Longitute} ${train.TrainData.Latititute})`}, ${extra}, ${
+                train.TrainData.DistanceToSignalInFront
+              }, ${type}, ${trainId})`;
+
+              signal = {
+                name: signalId,
+                accuracy: train.TrainData.DistanceToSignalInFront,
+                type: type,
+                role: null,
+                prev_finalized: false,
+                next_finalized: false,
+                prev_regex: null,
+                next_regex: null,
+                prevSignalConnections: [],
+                nextSignalConnections: [],
+              };
+              signals.push(signal);
+
               logger.success(
-                `Signal ${signalId} accuracy updated from ${signal.accuracy}m to ${
-                  train.TrainData.DistanceToSignalInFront
-                }m (${signal.accuracy - train.TrainData.DistanceToSignalInFront}m)`
+                `New signal detected: ${signalId} at ${train.TrainData.Latititute}, ${train.TrainData.Longitute} (${extra}) with accuracy ${train.TrainData.DistanceToSignalInFront}m`
               );
             } catch (e) {
-              logger.error(
-                `Failed to update signal ${signalId} accuracy to ${train.TrainData.DistanceToSignalInFront}m: ${e}`
-              );
+              logger.error(`Failed to create new signal ${signalId}: ${e}`);
             }
           }
-        } else {
-          // new signal
+        }
+
+        // check if role could be updated
+        if (signal && !signal.role && role) {
           try {
-            await prisma.$executeRaw`
-              INSERT INTO signals (name, point, extra, accuracy, type, creator)
-              VALUES (${signalId}, ${`SRID=4326;POINT(${train.TrainData.Longitute} ${train.TrainData.Latititute})`}, ${extra}, ${
-              train.TrainData.DistanceToSignalInFront
-            }, ${type}, ${trainId})`;
-
-            signal = {
-              name: signalId,
-              accuracy: train.TrainData.DistanceToSignalInFront,
-              type: type,
-              role: null,
-              prev_finalized: false,
-              next_finalized: false,
-              prev_regex: null,
-              next_regex: null,
-              prevSignalConnections: [],
-              nextSignalConnections: [],
-            };
-            signals.push(signal);
-
-            logger.success(
-              `New signal detected: ${signalId} at ${train.TrainData.Latititute}, ${train.TrainData.Longitute} (${extra}) with accuracy ${train.TrainData.DistanceToSignalInFront}m`
-            );
+            await prisma.signals.update({
+              where: { name: signalId },
+              data: {
+                role: role,
+              },
+            });
+            logger.success(`Signal ${signalId} role set to ${role}`);
           } catch (e) {
-            logger.error(`Failed to create new signal ${signalId}: ${e}`);
+            logger.error(`Failed to set signal ${signalId} role to ${role}: ${e}`);
           }
         }
-      }
 
-      // check if role could be updated
-      if (signal && !signal.role && role) {
-        try {
-          await prisma.signals.update({
-            where: { name: signalId },
-            data: {
-              role: role,
-            },
-          });
-          logger.success(`Signal ${signalId} role set to ${role}`);
-        } catch (e) {
-          logger.error(`Failed to set signal ${signalId} role to ${role}: ${e}`);
-        }
-      }
+        const prevSignalData = TrainPreviousSignals.get(trainId);
 
-      const prevSignalData = TrainPreviousSignals.get(trainId);
+        if (prevSignalData && prevSignalData[0] !== signalId && !signal?.prev_finalized) {
+          // train reached a new signal from a previous signal
+          const [prevSignalId, prevSignalSpeed] = prevSignalData;
 
-      if (prevSignalData && prevSignalData[0] !== signalId && !signal?.prev_finalized) {
-        // train reached a new signal from a previous signal
-        const [prevSignalId, prevSignalSpeed] = prevSignalData;
+          const prevSignal =
+            signals.find((signal) => signal.name === prevSignalId) ||
+            (await prisma.signals.findUnique({
+              where: { name: prevSignalId },
+              select: {
+                name: true,
+                type: true,
+                role: true,
+                prev_finalized: true,
+                next_finalized: true,
+                prev_regex: true,
+                next_regex: true,
+                prevSignalConnections: { select: { next: true } },
+                nextSignalConnections: { select: { prev: true } },
+              },
+            }));
 
-        const prevSignal =
-          signals.find((signal) => signal.name === prevSignalId) ||
-          (await prisma.signals.findUnique({
-            where: { name: prevSignalId },
-            select: {
-              name: true,
-              type: true,
-              role: true,
-              prev_finalized: true,
-              next_finalized: true,
-              prev_regex: true,
-              next_regex: true,
-              prevSignalConnections: { select: { next: true } },
-              nextSignalConnections: { select: { prev: true } },
-            },
-          }));
+          if (!prevSignal) {
+            logger.warn(
+              `Train ${trainId} reached ${
+                signal ? "" : "unknown "
+              }signal ${signalId} from unknown signal ${prevSignalId}`
+            );
 
-        if (!prevSignal) {
-          logger.warn(
-            `Train ${trainId} reached ${
-              signal ? "" : "unknown "
-            }signal ${signalId} from unknown signal ${prevSignalId}`
-          );
+            tryLogError(prevSignalId, signalId, `Unknown signal ${prevSignalId}`, trainId);
+          } else if (signal && !prevSignal.next_finalized) {
+            // if signal is known and prevSignal is also known and not finalized
 
-          tryLogError(prevSignalId, signalId, `Unknown signal ${prevSignalId}`, trainId);
-        } else if (signal && !prevSignal.next_finalized) {
-          // if signal is known and prevSignal is also known and not finalized
+            let shouldIgnore = false;
 
-          let shouldIgnore = false;
+            for (const validator of CONNECTION_VALIDATORS) {
+              try {
+                const result = validator(prevSignal, signal);
 
-          for (const validator of CONNECTION_VALIDATORS) {
-            try {
-              const result = validator(prevSignal, signal);
+                if (result === true) {
+                  continue;
+                }
 
-              if (result === true) {
-                continue;
-              }
+                if (result === null) {
+                  shouldIgnore = true;
+                  break;
+                }
 
-              if (result === null) {
+                tryLogError(prevSignalId, signalId, result, trainId);
+                shouldIgnore = true;
+                break;
+              } catch (e) {
+                logger.error(
+                  `Error while validating connection ${prevSignalId}->${signalId} using validator #${CONNECTION_VALIDATORS.indexOf(
+                    validator
+                  )} for train ${trainId}: ${e}`
+                );
                 shouldIgnore = true;
                 break;
               }
-
-              tryLogError(prevSignalId, signalId, result, trainId);
-              shouldIgnore = true;
-              break;
-            } catch (e) {
-              logger.error(
-                `Error while validating connection ${prevSignalId}->${signalId} using validator #${CONNECTION_VALIDATORS.indexOf(
-                  validator
-                )} for train ${trainId}: ${e}`
-              );
-              shouldIgnore = true;
-              break;
             }
-          }
 
-          if (!shouldIgnore) {
-            // add connection: prevSignal -> signal
-            try {
-              await prisma.signalConnections.create({
-                data: {
-                  prev: prevSignalId,
-                  next: signalId,
-                  creator: trainId,
-                  vmax: prevSignalSpeed || null,
-                },
-              });
-            } catch (e) {
-              tryLogError(
-                prevSignalId,
-                signalId,
-                `Failed to create connection between ${prevSignalId} and ${signalId}: ${e}`,
-                trainId
-              );
+            if (!shouldIgnore) {
+              // add connection: prevSignal -> signal
+              try {
+                await prisma.signalConnections.create({
+                  data: {
+                    prev: prevSignalId,
+                    next: signalId,
+                    creator: trainId,
+                    vmax: prevSignalSpeed || null,
+                  },
+                });
+              } catch (e) {
+                tryLogError(
+                  prevSignalId,
+                  signalId,
+                  `Failed to create connection between ${prevSignalId} and ${signalId}: ${e}`,
+                  trainId
+                );
+              }
             }
           }
         }
-      }
 
-      TrainPreviousSignals.set(trainId, [signalId, train.TrainData.SignalInFrontSpeed]);
+        TrainPreviousSignals.set(trainId, [signalId, train.TrainData.SignalInFrontSpeed]);
+      }
     }
 
     const duration = Date.now() - start;

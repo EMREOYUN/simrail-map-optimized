@@ -55,26 +55,28 @@ async function analyzeTrainsForRoutes(trains: Train[]) {
     let distances: number[] = [];
 
     for (const train of trains) {
-      if (!train.TrainData.Latititute || !train.TrainData.Longitute) {
-        logger.warn(
-          `Train ${train.TrainNoLocal} (${train.TrainName}) on server ${train.ServerCode} has no location data!`
+      if (train.ServerCode !== "eu3") {
+        if (!train.TrainData.Latititute || !train.TrainData.Longitute) {
+          logger.warn(
+            `Train ${train.TrainNoLocal} (${train.TrainName}) on server ${train.ServerCode} has no location data!`
+          );
+          continue;
+        }
+
+        const closestPoint = await findDistanceToClosestPoint(
+          train.TrainNoLocal,
+          train.TrainData.Latititute,
+          train.TrainData.Longitute
         );
-        continue;
-      }
 
-      const closestPoint = await findDistanceToClosestPoint(
-        train.TrainNoLocal,
-        train.TrainData.Latititute,
-        train.TrainData.Longitute
-      );
+        distances.push(closestPoint);
 
-      distances.push(closestPoint);
-
-      if (closestPoint > MIN_DISTANCE) {
-        addRoutePoint(train.TrainNoLocal, [train.TrainData.Latititute, train.TrainData.Longitute]);
-        addedPoints++;
-      } else {
-        discardedPoints++;
+        if (closestPoint > MIN_DISTANCE) {
+          addRoutePoint(train.TrainNoLocal, [train.TrainData.Latititute, train.TrainData.Longitute]);
+          addedPoints++;
+        } else {
+          discardedPoints++;
+        }
       }
     }
 
