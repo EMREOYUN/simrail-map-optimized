@@ -161,7 +161,8 @@ export class PerServerFetcher<T> extends Fetcher<Map<string, T>> {
   constructor(
     module: string,
     defaultRefreshInterval: number,
-    private serverFetcher: Fetcher<ServerStatus[]>
+    private serverFetcher: Fetcher<ServerStatus[]>,
+    private delayBetweenServers = 0
   ) {
     super(module, defaultRefreshInterval);
   }
@@ -187,6 +188,10 @@ export class PerServerFetcher<T> extends Fetcher<Map<string, T>> {
       const data = await this.fetchDataForServer(server.ServerCode);
       result.set(server.ServerCode, data);
       this.perServerData.next({ server: server.ServerCode, data });
+
+      if (this.delayBetweenServers) {
+        await new Promise((resolve) => setTimeout(resolve, this.delayBetweenServers));
+      }
     }
 
     return result;
